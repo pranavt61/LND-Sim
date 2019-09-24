@@ -1,23 +1,10 @@
-# Python script to manage lnd nodes
+#Python script to manage lnd nodes
+from __future__ import print_function
+from multiprocessing import Process
 import subprocess
 import os
 import shutil
 
-# one dict entry for each node
-# use id as key
-# {
-#   id
-#   wallet_balance
-#   peer_ids
-#   channels
-#   peer_port
-#   rpc_port
-#   rest_port
-#   data_dir
-#   log_dir
-#   output_pipe
-# }
-nodes = {}
 NEXT_NODE_ID = 0
 MAX_NODES = 10
 NODES_DIR = "/home/ubuntu/LND-Sim/nodes"
@@ -39,24 +26,15 @@ start_up = """ lnd
     --btcd.rpcpass=kek """;
 
 def main():
+    node_threads = [];
 
-    for i in range(0, 1):
-        start_node()
+    for node_id in range(0, 3):
+        node_threads.append(Process(target=start_node, args=(node_id,)))
+        node_threads[node_id].start()
 
     return
 
-def start_node():
-    global NEXT_NODE_ID
-    global nodes
-
-    NEXT_NODE_ID += 1
-
-    if NEXT_NODE_ID == MAX_NODES:
-        # No new 
-        print("ERROR: max nodes limit reached; Cannot create more nodes")
-        return
-
-    node_id = NEXT_NODE_ID
+def start_node(node_id):
     node_rpc = str(10000 + node_id)
     node_peer = str(10010 + node_id)
     node_rest = str(8000 + node_id)
@@ -78,17 +56,8 @@ def start_node():
     lnd_cmd = start_up.format(node_rpc, node_peer, node_rest, node_data, node_logs)
     lnd_output = cmd(lnd_cmd)
 
-    # add to node map
-    nodes[node_id] = {
-        "node_id": node_id,
-        "node_rpc": node_rpc,
-        "node_peer": node_peer,
-        "node_rest": node_rest,
-        "node_dir": node_dir,
-        "node_data": node_data,
-        "node_logs": node_logs,
-        "output_pipe": lnd_output
-    }
+    for l in lnd_output:
+        print(l, end='')
 
 # takes command in one string
 def cmd(command):
