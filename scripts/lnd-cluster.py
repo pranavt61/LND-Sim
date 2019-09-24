@@ -34,9 +34,11 @@ start_up = """ lnd
     --btcd.rpcpass=kek """;
 
 def main():
-    node_threads = [];
+    NUM_NODES = 2
+    node_threads = []
+    node_stubs = []     # {'wal': <>, 'ln': <>}
 
-    for node_id in range(0, 1):
+    for node_id in range(0, NUM_NODES):
         node_threads.append(Process(target=start_node, args=(node_id,)))
         node_threads[node_id].start()
 
@@ -45,20 +47,36 @@ def main():
     os.environ['GRPC_SSL_CIPHER_SUITES'] = 'HIGH+ECDSA'
 
     # init stubs
-    cert = open(NODES_DIR + '/0/tls.cert', 'rb').read()
-    ssl_creds = grpc.ssl_channel_credentials(cert)
-    channel = grpc.secure_channel('localhost:10000', ssl_creds)
-    stub = lnrpc.WalletUnlockerStub(channel)
+    for node_id in range(0, NUM_NODES):
 
-    request = ln.GenSeedRequest()
-    response = stub.GenSeed(request)
-    print(response.cipher_seed_mnemonic)
+        cert = open(NODES_DIR + '/' + str(node_id) + '/tls.cert', 'rb').read()
+        ssl_creds = grpc.ssl_channel_credentials(cert)
+        channel = grpc.secure_channel('localhost:' + str(10000 + node_id), ssl_creds)
 
-    request = ln.InitWalletRequest(
-            wallet_password="00000000",
-            cipher_seed_mnemonic=response.cipher_seed_mnemonic)
-    responce = stub.InitWallet(request)
-    print(response)
+        stub_wal = lnrpc.WalletUnlockerStub(channel)
+        stub_ln = lnrpc.LightningStub(channel)
+
+        node_stubs.append({'wal': stub_wal, 'ln': stub_ln})
+
+    # Gen seed and init wallet
+    for node_id in range(0, NUM_NODES):
+        stub_wal = node_stubs[node_id]['wal']
+        stub_ln = node_stubs[node_id]['wal']
+
+        ### Gen seed ###
+        request = ln.GenSeedRequest()
+        response = stub_wal.GenSeed(request)
+
+        cipher_seed_mnemonic = response.cipher_seed_mnemonic
+        print(response)
+
+        ### Init wallet ###
+        request = ln.InitWalletRequest(
+                wallet_password="00000000",
+                cipher_seed_mnemonic=cipher_seed_mnemonic)
+        response = stub_wal.InitWallet(request)
+
+        print(response)
 
     return
 
