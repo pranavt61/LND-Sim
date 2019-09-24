@@ -33,10 +33,24 @@ start_up = """ lnd
     --btcd.rpcuser=kek 
     --btcd.rpcpass=kek """;
 
+# Command to interact with lncli
+#   lncli_cmd.format(<node_id>, <rpc port>, <command>)
+lncli_cmd = """
+        lncli
+        --no-macaroons 
+        --tlscertpath=""" + NODES_DIR + "/{}/tls.cert " + """
+        --rpcserver=localhost:{} 
+        {}
+        """
+
 def main():
-    NUM_NODES = 2
+    NUM_NODES = 1
+    WALLET_PASS = '00000000'
+
     node_threads = []
     node_stubs = []     # {'wal': <>, 'ln': <>}
+    node_wall_addrs = []
+    macaroons = []
 
     for node_id in range(0, NUM_NODES):
         node_threads.append(Process(target=start_node, args=(node_id,)))
@@ -48,7 +62,6 @@ def main():
 
     # init stubs
     for node_id in range(0, NUM_NODES):
-
         cert = open(NODES_DIR + '/' + str(node_id) + '/tls.cert', 'rb').read()
         ssl_creds = grpc.ssl_channel_credentials(cert)
         channel = grpc.secure_channel('localhost:' + str(10000 + node_id), ssl_creds)
@@ -58,25 +71,44 @@ def main():
 
         node_stubs.append({'wal': stub_wal, 'ln': stub_ln})
 
-    # Gen seed and init wallet
+    # Init a node using gRPC
     for node_id in range(0, NUM_NODES):
         stub_wal = node_stubs[node_id]['wal']
-        stub_ln = node_stubs[node_id]['wal']
+        stub_ln = node_stubs[node_id]['ln']
 
-        ### Gen seed ###
+        ### Gen Seed ###
         request = ln.GenSeedRequest()
         response = stub_wal.GenSeed(request)
 
         cipher_seed_mnemonic = response.cipher_seed_mnemonic
         print(response)
 
-        ### Init wallet ###
+        ### Init Wallet ###
         request = ln.InitWalletRequest(
-                wallet_password="00000000",
-                cipher_seed_mnemonic=cipher_seed_mnemonic)
+            wallet_password=WALLET_PASS,
+            cipher_seed_mnemonic=cipher_seed_mnemonic)
         response = stub_wal.InitWallet(request)
 
+
         print(response)
+
+    # wait for all rpc servers to be active
+    for node_id in range(0, NUM_NODES):
+        while True:
+            time.sleep(2)
+            
+            # check for open server
+            output = cmd_async(lncli_cmd.format("0", "10000", "getinfo"))
+            try:
+                # if rpc server is active,
+                # the response will be json
+                info_output = json.loads(output)
+                print(info_output)
+                break
+            except:
+                print("======== ERROR: RPC server not active yet ========")
+                print("========             node_id: {}           ========".format(node_id))
+
 
     return
 
@@ -110,5 +142,11 @@ def cmd(command):
     return_code = popen.wait()
     if return_code:
         raise subprocess.CalledProcessError(return_code, cmd)
+
+def cmd_async(command):
+    process = subprocess.Popen(command.split(), stdout=subprocess.PIPE);
+    output, error = process.communicate();
+
+    return output
 
 main()
