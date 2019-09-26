@@ -68,7 +68,7 @@ node_seed = b'\x00\x00\x00\x00\x07\x80\x00\x03\x00\x00\x00\x00\x07\x80\x00\x03'
 #abandon, ride, spell, together, depth, news, embark, second, little, question, clutch, lucky, refuse, vital, doctor, into, vacuum, squeeze, ahead, brave, lawn, color, outside, manage
 
 def main():
-    NUM_NODES = 3
+    NUM_NODES = 5
     WALLET_PASS = '00000000'
     MINNING_ADDR = "SY6RbmrfYo2Vg9P9RuTreucM7G1SyVqhhb"
 
@@ -158,12 +158,12 @@ def main():
         nodes[node_id]["addr"] = json.loads(output)["address"]
 
     ### Fund All Nodes ###
-    COINS_PER_NODE = " 10000";
+    COINS_PER_NODE = " 100000000";
 
     output_node_0_balance = cmd_async(lncli_cmd.format("0", "10000", "walletbalance"))
     print(output_node_0_balance)
 
-    # Mine
+    # Mine coinbase
     output_mining = cmd_async(btcctl_cmd.format("generate 200"))
     time.sleep(5)                                                   # Wait for mining
 
@@ -174,19 +174,51 @@ def main():
                 "sendcoins " + nodes[node_id]['addr'] + COINS_PER_NODE);
         output_sendcoins = cmd_async(lnc_command)
         print(output_sendcoins)
+    
+    # Mine transactions
+    output_mining = cmd_async(btcctl_cmd.format("generate 200"))
+    time.sleep(5)                                                   # Wait for mining
 
     ### Create Channels ###
     
     # create graph
     graph = create_graph(NUM_NODES)
 
-    # connect peers
+    # connect peers and open channels
+    for node_id in range(0, NUM_NODES):
+        peers = graph[node_id]
+        for peer_i in range(0, len(peers)):
+            peer = nodes[peers[peer_i]]
 
-    time.sleep(5)
+            # connect peers
+            lnc_command = lncli_cmd.format(
+                    str(node_id),
+                    str(10000 + node_id),
+                    "connect " + peer["id_pubkey"] + "@localhost:" + str(20000 + peer['id'])
+                    )
+            output_connect = cmd_async(lnc_command)
+            print(output_connect)
+
+            # open channels
+            lnc_command = lncli_cmd.format(
+                    str(node_id),
+                    str(10000 + node_id),
+                    "openchannel --node_key=" + peer["id_pubkey"] + " --local_amt=1000000 --push_amt=100000"
+                    )
+            output_channel = cmd_async(lnc_command)
+            print(output_channel)
+
+
+    # Mine channels
+    output_mining = cmd_async(btcctl_cmd.format("generate 200"))
+    time.sleep(5)                                                   # Wait for mining
+
+    # DEBUG
     print(nodes)
+    print(graph)
     return
 
-# Returns adj matrix
+# Returns adj list
 def create_graph(n):
     mat = [];
     n_list = [];
@@ -197,8 +229,6 @@ def create_graph(n):
 
         # populate mat
         mat.append([])
-        for y in range(0,n):
-            mat[x].append(0)
 
     random.shuffle(n_list)
     
@@ -211,11 +241,11 @@ def create_graph(n):
 
         if l_i < len(n_list):
             l = n_list[l_i]
-            mat[p][l] = 1
+            mat[p].append(l)
 
         if r_i < len(n_list):
             r = n_list[r_i]
-            mat[p][r] = 1
+            mat[p].append(r)
 
         if r_i >= len(n_list) and l_i >= len(n_list):
             break
@@ -224,19 +254,18 @@ def create_graph(n):
 
     for i in range(0, n):
         # look for empty row
-        for r in range(0, n):
-            if mat[i][r] == 1:
-                continue
+        if len(mat[i]) != 0: # CHANGE MAT TO LIST
+            continue
 
         # create new peer
         for j in range(0, n):
             rand = int(random.random() * n)
 
             # if rand node is not self and already connected
-            if rand != i and mat[rand][i] != 1:
-                mat[i][rand] = 1
+            if rand != i and i not in mat[rand]:
+                mat[i].append(rand)
                 break
-
+    
     return mat
 
 def btcd_start_node():
@@ -251,7 +280,7 @@ def ln_start_node(node_id):
     print("START LND - " + str(node_id))
 
     node_rpc = str(10000 + node_id)
-    node_peer = str(10010 + node_id)
+    node_peer = str(20000 + node_id)
     node_rest = str(8000 + node_id)
     node_dir = NODES_DIR + '/' + str(node_id)
 
