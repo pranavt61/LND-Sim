@@ -7,20 +7,37 @@ import shutil
 import rpc_pb2 as ln
 import rpc_pb2_grpc as lnrpc
 import grpc
-
 import base64
 import json
 import requests
 import time
 import codecs
+import random
 
 NEXT_NODE_ID = 0
 MAX_NODES = 10
 NODES_DIR = "/home/ubuntu/LND-Sim/nodes"
+BTCD_DIR = "/home/ubuntu/LND-Sim/btcd"
+
+# Command for btcd node
+btcd_start_up = """btcd 
+    --txindex 
+    --datadir=""" + BTCD_DIR + """/data 
+    --logdir=""" + BTCD_DIR + """/log 
+    --simnet 
+    --miningaddr=roF5YRWAjZy5tPB5Nib5kJ76EsXmLue4NK
+    --rpcuser=kek 
+    --rpcpass=kek """
+
+btcctl_cmd = """btcctl 
+     --simnet 
+     --rpcuser=kek 
+     --rpcpass=kek 
+     {}"""
 
 # Command need .format()
-#   start_up.format(<rpc port>, <peer port>, <rest port>, <data>, <log>)
-start_up = """ lnd 
+#   ln_start_up.format(<rpc port>, <peer port>, <rest port>, <data>, <log>)
+ln_start_up = """ lnd 
     --no-macaroons 
     --rpclisten=localhost:{} 
     --listen=localhost:{} 
@@ -43,18 +60,41 @@ lncli_cmd = """
         {}
         """
 
+# initial node seed for node # 1
+#   used to preserve funds and have a consistant
+#   minning addr
+node_seed = b'\x00\x00\x00\x00\x07\x80\x00\x03\x00\x00\x00\x00\x07\x80\x00\x03'
+
+#abandon, ride, spell, together, depth, news, embark, second, little, question, clutch, lucky, refuse, vital, doctor, into, vacuum, squeeze, ahead, brave, lawn, color, outside, manage
+
 def main():
-    NUM_NODES = 1
+    NUM_NODES = 3
     WALLET_PASS = '00000000'
+    MINNING_ADDR = "SY6RbmrfYo2Vg9P9RuTreucM7G1SyVqhhb"
 
-    node_threads = []
-    node_stubs = []     # {'wal': <>, 'ln': <>}
-    node_wall_addrs = []
-    macaroons = []
+    # btcd thread proc
+    btcd = None
 
+    # Stores all node data
+    # {
+    #   id,
+    #   thread,
+    #   stub_wal,
+    #   addr
+    # }
+    nodes = []
+
+    # start btcd node
+    btcd = Process(target=btcd_start_node)
+    btcd.start()
+
+    # start lnd nodes
     for node_id in range(0, NUM_NODES):
-        node_threads.append(Process(target=start_node, args=(node_id,)))
-        node_threads[node_id].start()
+        nodes.append({
+            "id": node_id,
+            "thread": Process(target=ln_start_node, args=(node_id,))
+        })
+        nodes[node_id]["thread"].start()
 
     time.sleep(1)
 
@@ -67,20 +107,23 @@ def main():
         channel = grpc.secure_channel('localhost:' + str(10000 + node_id), ssl_creds)
 
         stub_wal = lnrpc.WalletUnlockerStub(channel)
-        stub_ln = lnrpc.LightningStub(channel)
 
-        node_stubs.append({'wal': stub_wal, 'ln': stub_ln})
+        nodes[node_id]["stub_wal"] = stub_wal
 
     # Init a node using gRPC
     for node_id in range(0, NUM_NODES):
-        stub_wal = node_stubs[node_id]['wal']
-        stub_ln = node_stubs[node_id]['ln']
+        stub_wal = nodes[node_id]['stub_wal']
 
         ### Gen Seed ###
-        request = ln.GenSeedRequest()
+        request = None
+        if node_id == 0:
+            request = ln.GenSeedRequest(seed_entropy=bytes(node_seed))
+        else:
+            request = ln.GenSeedRequest()
         response = stub_wal.GenSeed(request)
 
         cipher_seed_mnemonic = response.cipher_seed_mnemonic
+        print(bytes(node_seed))
         print(response)
 
         ### Init Wallet ###
@@ -89,30 +132,124 @@ def main():
             cipher_seed_mnemonic=cipher_seed_mnemonic)
         response = stub_wal.InitWallet(request)
 
-
         print(response)
 
-    # wait for all rpc servers to be active
     for node_id in range(0, NUM_NODES):
+
+        # wait for RPC server
         while True:
             time.sleep(2)
             
             # check for open server
-            output = cmd_async(lncli_cmd.format("0", "10000", "getinfo"))
+            output = cmd_async(lncli_cmd.format(str(node_id), str(10000 + node_id), "getinfo"))
             try:
                 # if rpc server is active,
                 # the response will be json
                 info_output = json.loads(output)
+                nodes[node_id]['id_pubkey'] = info_output["identity_pubkey"]
                 print(info_output)
                 break
             except:
                 print("======== ERROR: RPC server not active yet ========")
                 print("========             node_id: {}           ========".format(node_id))
 
+        ### New Address ###
+        output = cmd_async(lncli_cmd.format(str(node_id), str(10000 + node_id), "newaddress np2wkh"))
+        nodes[node_id]["addr"] = json.loads(output)["address"]
 
+    ### Fund All Nodes ###
+    COINS_PER_NODE = " 10000";
+
+    output_node_0_balance = cmd_async(lncli_cmd.format("0", "10000", "walletbalance"))
+    print(output_node_0_balance)
+
+    # Mine
+    output_mining = cmd_async(btcctl_cmd.format("generate 200"))
+    time.sleep(5)                                                   # Wait for mining
+
+    # Send Coins
+    for node_id in range(1, NUM_NODES):
+        lnc_command = lncli_cmd.format("0",
+                "10000",
+                "sendcoins " + nodes[node_id]['addr'] + COINS_PER_NODE);
+        output_sendcoins = cmd_async(lnc_command)
+        print(output_sendcoins)
+
+    ### Create Channels ###
+    
+    # create graph
+    graph = create_graph(NUM_NODES)
+
+    # connect peers
+
+    time.sleep(5)
+    print(nodes)
     return
 
-def start_node(node_id):
+# Returns adj matrix
+def create_graph(n):
+    mat = [];
+    n_list = [];
+
+    for x in range(0, n):
+        # populate n_list
+        n_list.append(x)
+
+        # populate mat
+        mat.append([])
+        for y in range(0,n):
+            mat[x].append(0)
+
+    random.shuffle(n_list)
+    
+    p_i = 0
+    while True:
+        l_i = (p_i * 2) + 1
+        r_i = (p_i * 2) + 2 
+
+        p = n_list[p_i]
+
+        if l_i < len(n_list):
+            l = n_list[l_i]
+            mat[p][l] = 1
+
+        if r_i < len(n_list):
+            r = n_list[r_i]
+            mat[p][r] = 1
+
+        if r_i >= len(n_list) and l_i >= len(n_list):
+            break
+
+        p_i += 1
+
+    for i in range(0, n):
+        # look for empty row
+        for r in range(0, n):
+            if mat[i][r] == 1:
+                continue
+
+        # create new peer
+        for j in range(0, n):
+            rand = int(random.random() * n)
+
+            # if rand node is not self and already connected
+            if rand != i and mat[rand][i] != 1:
+                mat[i][rand] = 1
+                break
+
+    return mat
+
+def btcd_start_node():
+    print("START BTCD")
+    btcd_cmd = btcd_start_up
+
+    btcd_output = cmd(btcd_cmd)
+    for l in btcd_output:
+        print("BTCD => " + l, end='')
+
+def ln_start_node(node_id):
+    print("START LND - " + str(node_id))
+
     node_rpc = str(10000 + node_id)
     node_peer = str(10010 + node_id)
     node_rest = str(8000 + node_id)
@@ -127,11 +264,11 @@ def start_node(node_id):
     os.mkdir(node_dir)
 
     # start lnd
-    lnd_cmd = start_up.format(node_rpc, node_peer, node_rest, node_dir)
+    lnd_cmd = ln_start_up.format(node_rpc, node_peer, node_rest, node_dir)
     lnd_output = cmd(lnd_cmd)
 
     for l in lnd_output:
-        print(l, end='')
+        print("LND {} => ".format(node_id) + l, end='')
 
 # takes command in one string
 def cmd(command):
