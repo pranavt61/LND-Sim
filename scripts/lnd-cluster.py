@@ -71,6 +71,7 @@ def main():
     NUM_NODES = 5
     WALLET_PASS = '00000000'
     MINNING_ADDR = "SY6RbmrfYo2Vg9P9RuTreucM7G1SyVqhhb"
+    LOG_FILE_PATH = './log.txt';
 
     # btcd thread proc
     btcd = None
@@ -216,6 +217,29 @@ def main():
     # DEBUG
     print(nodes)
     print(graph)
+
+    ### SEND COINS ###
+    log_f = open(LOG_FILE_PATH, "w+")
+    while True:
+        s = -1
+        r = -1
+        a = 1
+
+        # pick random sender
+        s = int(random.random() * NUM_NODES)
+
+        # pick random receiver
+        r = int(random.random() * NUM_NODES)
+        while r == s:
+            # pick another val
+            r = int(random.random() * NUM_NODES)
+
+        # pick random amount
+        a = random.randint(1, 10)
+
+        pay_invoice(s, r, a, log_f)
+
+        time.sleep(2)
     return
 
 # Returns adj list
@@ -267,6 +291,39 @@ def create_graph(n):
                 break
     
     return mat
+
+def pay_invoice(sender, receiver, amt, log_file):
+    print(str(sender) + ' paying ' + str(receiver) + ' ' + str(amt) + ' coins' + '...');
+    log_file.write(str(sender) + ' paying ' + str(receiver) + ' ' + str(amt) + ' coins' + '...\n')
+
+    # make invoice
+    add_invoice = lncli_cmd.format(str(receiver), str(10000 + receiver), "addinvoice --amt=" + str(amt))
+    invoice_string = cmd_async(add_invoice);
+    log_file.write(add_invoice + '\n')
+
+    invoice = json.loads(invoice_string);
+
+    # pay invoice
+    pay = lncli_cmd.format(str(sender), str(10000 + sender), "sendpayment -f --pay_req=" + invoice['pay_req'])
+    receipt = cmd_async(pay)
+    receipt = json.loads(receipt)
+    log_file.write(pay + '\n')
+
+    if receipt['payment_error'] == '':
+        print("Success")
+        print(receipt)
+        print("---------------------------------------")
+
+        log_file.write("SUCCESS")
+        log_file.write("\n---------------------------------------\n")
+    else:
+        print("FAILED")
+        print(receipt)
+        print("---------------------------------------")
+
+        log_file.write("FAILED")
+        log_file.write("\n---------------------------------------\n")
+
 
 def btcd_start_node():
     print("START BTCD")
