@@ -16,6 +16,8 @@ import random
 import sys
 import re
 
+import graphs
+
 NEXT_NODE_ID = 0
 MAX_NODES = 10
 NODES_DIR = "/home/ubuntu/LND-Sim/nodes"
@@ -67,19 +69,24 @@ lncli_cmd = """
 #   minning addr
 node_seed = b'\x00\x00\x00\x00\x07\x80\x00\x03\x00\x00\x00\x00\x07\x80\x00\x03'
 
-#abandon, ride, spell, together, depth, news, embark, second, little, question, clutch, lucky, refuse, vital, doctor, into, vacuum, squeeze, ahead, brave, lawn, color, outside, manage
-
 def main():
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 3:
         # missing num nodes
         print("Usage:")
-        print("     py lnd-cluster.py <NUM_NODES>")
+        print("     py lnd-cluster.py <NUM_NODES> <GRAPH_TYPE>")
+        print("     Graph types: tree, central, ring")
         exit(1)
     
     NUM_NODES = int(sys.argv[1])
+    GRAPH_TYPE = sys.argv[2]
     WALLET_PASS = '00000000'
     MINNING_ADDR = "SY6RbmrfYo2Vg9P9RuTreucM7G1SyVqhhb"
     LOG_FILE_PATH = './log.txt';
+
+    ### ARG Checking ###
+    if GRAPH_TYPE not in graphs.graph_types:
+        print("ERROR: invalid graph type -> " + GRAPH_TYPE)
+        exit()
 
     # btcd thread proc
     btcd = None
@@ -191,7 +198,7 @@ def main():
     ### Create Channels ###
     
     # create graph
-    graph = create_graph_central(NUM_NODES)
+    graph = graphs.graph_types[GRAPH_TYPE](NUM_NODES)
 
     # connect peers and open channels
     for node_id in range(0, NUM_NODES):
@@ -248,73 +255,6 @@ def main():
 
         time.sleep(.5)
     return
-
-# Create a Circular tree
-# Returns adj list
-def create_graph_tree(n):
-    mat = [];
-    n_list = [];
-
-    for x in range(0, n):
-        # populate n_list
-        n_list.append(x)
-
-        # populate mat
-        mat.append([])
-
-    random.shuffle(n_list)
-    
-    p_i = 0
-    while True:
-        l_i = (p_i * 2) + 1
-        r_i = (p_i * 2) + 2 
-
-        p = n_list[p_i]
-
-        if l_i < len(n_list):
-            l = n_list[l_i]
-            mat[p].append(l)
-
-        if r_i < len(n_list):
-            r = n_list[r_i]
-            mat[p].append(r)
-
-        if r_i >= len(n_list) and l_i >= len(n_list):
-            break
-
-        p_i += 1
-
-    for i in range(0, n):
-        # look for empty row
-        if len(mat[i]) != 0: # CHANGE MAT TO LIST
-            continue
-
-        # create new peer
-        for j in range(0, n):
-            rand = int(random.random() * n)
-
-            # if rand node is not self and already connected
-            if rand != i and i not in mat[rand]:
-                mat[i].append(rand)
-                break
-    
-    return mat
-
-# Create a centralized graph
-# Returns an adj list
-def create_graph_central(n):
-    mat = []
-
-    # central node
-    mat.append([])
-    for i in range(1,n):
-        mat[0].append(i)
-
-        # child nodes
-        mat.append([])
-
-    return mat
-
 
 def pay_invoice(sender, receiver, amt, log_file):
     print(str(sender) + ' paying ' + str(receiver) + ' ' + str(amt) + ' coins' + '...');

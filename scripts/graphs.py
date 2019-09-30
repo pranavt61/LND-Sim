@@ -67,10 +67,6 @@ def create_graph_central(n):
 
     return mat
 
-def create_graph_central_hubs(n):
-
-    return
-
 # Create a ring graph
 # returns adj list
 def create_graph_ring(n):
