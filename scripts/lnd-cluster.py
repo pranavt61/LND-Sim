@@ -191,7 +191,7 @@ def main():
     ### Create Channels ###
     
     # create graph
-    graph = create_graph(NUM_NODES)
+    graph = create_graph_central(NUM_NODES)
 
     # connect peers and open channels
     for node_id in range(0, NUM_NODES):
@@ -216,7 +216,6 @@ def main():
                     )
             output_channel = cmd_async(lnc_command)
             print(output_channel)
-
 
     # Mine channels
     output_mining = cmd_async(btcctl_cmd.format("generate 200"))
@@ -250,8 +249,9 @@ def main():
         time.sleep(.5)
     return
 
+# Create a Circular tree
 # Returns adj list
-def create_graph(n):
+def create_graph_tree(n):
     mat = [];
     n_list = [];
 
@@ -300,6 +300,22 @@ def create_graph(n):
     
     return mat
 
+# Create a centralized graph
+# Returns an adj list
+def create_graph_central(n):
+    mat = []
+
+    # central node
+    mat.append([])
+    for i in range(1,n):
+        mat[0].append(i)
+
+        # child nodes
+        mat.append([])
+
+    return mat
+
+
 def pay_invoice(sender, receiver, amt, log_file):
     print(str(sender) + ' paying ' + str(receiver) + ' ' + str(amt) + ' coins' + '...');
     log_file.write(str(sender) + ' paying ' + str(receiver) + ' ' + str(amt) + ' coins' + '...\n')
@@ -331,7 +347,6 @@ def pay_invoice(sender, receiver, amt, log_file):
 
         log_file.write("FAILED")
         log_file.write("\n---------------------------------------\n")
-
 
 def btcd_start_node():
     print("START BTCD")
