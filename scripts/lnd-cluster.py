@@ -13,6 +13,8 @@ import requests
 import time
 import codecs
 import random
+import sys
+import re
 
 NEXT_NODE_ID = 0
 MAX_NODES = 10
@@ -68,7 +70,13 @@ node_seed = b'\x00\x00\x00\x00\x07\x80\x00\x03\x00\x00\x00\x00\x07\x80\x00\x03'
 #abandon, ride, spell, together, depth, news, embark, second, little, question, clutch, lucky, refuse, vital, doctor, into, vacuum, squeeze, ahead, brave, lawn, color, outside, manage
 
 def main():
-    NUM_NODES = 5
+    if len(sys.argv) < 2:
+        # missing num nodes
+        print("Usage:")
+        print("     py lnd-cluster.py <NUM_NODES>")
+        exit(1)
+    
+    NUM_NODES = int(sys.argv[1])
     WALLET_PASS = '00000000'
     MINNING_ADDR = "SY6RbmrfYo2Vg9P9RuTreucM7G1SyVqhhb"
     LOG_FILE_PATH = './log.txt';
@@ -239,7 +247,7 @@ def main():
 
         pay_invoice(s, r, a, log_f)
 
-        time.sleep(2)
+        time.sleep(.5)
     return
 
 # Returns adj list
@@ -353,8 +361,46 @@ def ln_start_node(node_id):
     lnd_cmd = ln_start_up.format(node_rpc, node_peer, node_rest, node_dir)
     lnd_output = cmd(lnd_cmd)
 
+    # create output file
+    output_file = open(node_dir + '/payments_routed.txt', 'w+')
+    payments_routed = []
+
     for l in lnd_output:
         print("LND {} => ".format(node_id) + l, end='')
+
+        try:
+            # check for routed payments
+            match_r = re.search("((.*)Received UpdateAddHTLC(.*))", l)
+            match_s = re.search("((.*)Sending UpdateAddHTLC(.*))", l)
+
+            if match_r:
+                from_addr = l.split(' from ')[1].split('@')[0]
+                timestamp = l.split(' [DBG] ')[0]
+                from_amt = l.split(', ')[2].split('=')[1]
+
+                payments_routed.append({
+                    "from": from_addr,
+                    "timestamp": timestamp
+                })
+            elif match_s:
+                if len(payments_routed) == 0:
+                    continue
+                if "to" in payments_routed[len(payments_routed) - 1]:
+                    continue
+
+                to_addr = l.split(' to ')[1].split('@')[0]
+                timestamp = l.split(' [DBG] ')[0]
+                to_amt = l.split(', ')[2].split('=')[1]
+
+                payments_routed[len(payments_routed) - 1]["to"] = to_addr
+                payments_routed[len(payments_routed) - 1]["amt"] = to_amt
+
+                print(payments_routed[len(payments_routed) - 1])
+                output_file.write(str(payments_routed[len(payments_routed) - 1]) + '\n')
+        except Exception as ex:
+            output_file.write(str(ex))
+            continue
+
 
 # takes command in one string
 def cmd(command):
