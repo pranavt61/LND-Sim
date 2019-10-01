@@ -1,5 +1,6 @@
 #Python script to manage lnd nodes
 from __future__ import print_function
+import random
 
 # Create a Circular tree
 # Returns adj list
@@ -13,8 +14,6 @@ def create_graph_tree(n):
 
         # populate mat
         mat.append([])
-
-    random.shuffle(n_list)
     
     p_i = 0
     while True:
@@ -77,6 +76,13 @@ def create_graph_ring(n):
         mat.append([next_node])
 
     return mat
+
+def create_graph_star(n):
+    mat = []
+
+    for i in range(0, n):
+        mat.append([])
+
 
 graph_types = {
     "tree": create_graph_tree,

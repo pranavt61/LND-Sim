@@ -31,7 +31,10 @@ btcd_start_up = """btcd
     --simnet 
     --miningaddr=roF5YRWAjZy5tPB5Nib5kJ76EsXmLue4NK
     --rpcuser=kek 
-    --rpcpass=kek """
+    --rpcpass=kek
+    --rpcmaxclients=100
+    --rpcmaxwebsockets=100
+    """
 
 btcctl_cmd = """btcctl 
      --simnet 
@@ -88,6 +91,12 @@ def main():
         print("ERROR: invalid graph type -> " + GRAPH_TYPE)
         exit()
 
+    ### Clean dir ###
+    dir_list = os.listdir(NODES_DIR)
+    for node_id in dir_list:
+        node_dir = NODES_DIR + '/' + str(node_id)
+        shutil.rmtree(node_dir)
+
     # btcd thread proc
     btcd = None
 
@@ -118,7 +127,14 @@ def main():
 
     # init stubs
     for node_id in range(0, NUM_NODES):
-        cert = open(NODES_DIR + '/' + str(node_id) + '/tls.cert', 'rb').read()
+        while True:
+            try:
+                print("Node {} reading cert file...".format(str(node_id)))
+                cert = open(NODES_DIR + '/' + str(node_id) + '/tls.cert', 'rb').read()
+                break
+            except:
+                print("ERROR: cannot find cert file: " + str(NODES_DIR + '/' + str(node_id) + '/tls.cert'))
+
         ssl_creds = grpc.ssl_channel_credentials(cert)
         channel = grpc.secure_channel('localhost:' + str(10000 + node_id), ssl_creds)
 
@@ -192,7 +208,7 @@ def main():
         print(output_sendcoins)
     
     # Mine transactions
-    output_mining = cmd_async(btcctl_cmd.format("generate 200"))
+    output_mining = cmd_async(btcctl_cmd.format("generate 20"))
     time.sleep(5)                                                   # Wait for mining
 
     ### Create Channels ###
@@ -225,12 +241,8 @@ def main():
             print(output_channel)
 
     # Mine channels
-    output_mining = cmd_async(btcctl_cmd.format("generate 200"))
+    output_mining = cmd_async(btcctl_cmd.format("generate 20"))
     time.sleep(5)                                                   # Wait for mining
-
-    # DEBUG
-    print(nodes)
-    print(graph)
 
     ### SEND COINS ###
     log_f = open(LOG_FILE_PATH, "w+")
@@ -248,12 +260,9 @@ def main():
             # pick another val
             r = int(random.random() * NUM_NODES)
 
-        # pick random amount
-        a = random.randint(1, 10)
+        pay_invoice(s, r, 5, log_f)
 
-        pay_invoice(s, r, a, log_f)
-
-        time.sleep(.5)
+        time.sleep(.25)
     return
 
 def pay_invoice(sender, receiver, amt, log_file):
@@ -294,7 +303,8 @@ def btcd_start_node():
 
     btcd_output = cmd(btcd_cmd)
     for l in btcd_output:
-        print("BTCD => " + l, end='')
+        #print("BTCD => " + l, end='')
+        continue
 
 def ln_start_node(node_id):
     print("START LND - " + str(node_id))
@@ -320,40 +330,44 @@ def ln_start_node(node_id):
     output_file = open(node_dir + '/payments_routed.txt', 'w+')
     payments_routed = []
 
-    for l in lnd_output:
-        print("LND {} => ".format(node_id) + l, end='')
-
+    while True:
         try:
-            # check for routed payments
-            match_r = re.search("((.*)Received UpdateAddHTLC(.*))", l)
-            match_s = re.search("((.*)Sending UpdateAddHTLC(.*))", l)
+            for l in lnd_output:
+                #print("LND {} => ".format(node_id) + l, end='')
 
-            if match_r:
-                from_addr = l.split(' from ')[1].split('@')[0]
-                timestamp = l.split(' [DBG] ')[0]
-                from_amt = l.split(', ')[2].split('=')[1]
+                try:
+                    # check for routed payments
+                    match_r = re.search("((.*)Received UpdateAddHTLC(.*))", l)
+                    match_s = re.search("((.*)Sending UpdateAddHTLC(.*))", l)
 
-                payments_routed.append({
-                    "from": from_addr,
-                    "timestamp": timestamp
-                })
-            elif match_s:
-                if len(payments_routed) == 0:
+                    if match_r:
+                        from_addr = l.split(' from ')[1].split('@')[0]
+                        timestamp = l.split(' [DBG] ')[0]
+                        from_amt = l.split(', ')[2].split('=')[1]
+
+                        payments_routed.append({
+                            "from": from_addr,
+                            "timestamp": timestamp
+                        })
+                    elif match_s:
+                        if len(payments_routed) == 0:
+                            continue
+                        if "to" in payments_routed[len(payments_routed) - 1]:
+                            continue
+
+                        to_addr = l.split(' to ')[1].split('@')[0]
+                        timestamp = l.split(' [DBG] ')[0]
+                        to_amt = l.split(', ')[2].split('=')[1]
+
+                        payments_routed[len(payments_routed) - 1]["to"] = to_addr
+                        payments_routed[len(payments_routed) - 1]["amt"] = to_amt
+
+                        print(payments_routed[len(payments_routed) - 1])
+                        output_file.write(str(payments_routed[len(payments_routed) - 1]) + '\n')
+                except Exception as ex:
+                    output_file.write(str(ex))
                     continue
-                if "to" in payments_routed[len(payments_routed) - 1]:
-                    continue
-
-                to_addr = l.split(' to ')[1].split('@')[0]
-                timestamp = l.split(' [DBG] ')[0]
-                to_amt = l.split(', ')[2].split('=')[1]
-
-                payments_routed[len(payments_routed) - 1]["to"] = to_addr
-                payments_routed[len(payments_routed) - 1]["amt"] = to_amt
-
-                print(payments_routed[len(payments_routed) - 1])
-                output_file.write(str(payments_routed[len(payments_routed) - 1]) + '\n')
-        except Exception as ex:
-            output_file.write(str(ex))
+        except:
             continue
 
 
