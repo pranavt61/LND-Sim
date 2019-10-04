@@ -1,17 +1,17 @@
-# Get data from ../nodes/{id}/payments_routed.txt
+# List channels and payments routes for each node
 import sys
 import os
 import json
 import subprocess
 
-NODE_DIR = "/home/ubuntu/LND-Sim/nodes/"
+NODES_DIR = "/home/ubuntu/LND-Sim/nodes/"
 
 # Command to interact with lncli
 #   lncli_cmd.format(<node_id>, <rpc port>, <command>)
 lncli_cmd = """
     lncli
     --no-macaroons 
-    --tlscertpath=""" + NODE_DIR + "/{}/tls.cert " + """
+    --tlscertpath=""" + NODES_DIR + "/{}/tls.cert " + """
     --rpcserver=localhost:{} 
     {}
 """
@@ -22,7 +22,11 @@ def main():
 
     print("Number of payments routed: ")
 
-    dirs = os.listdir(NODE_DIR)
+    dirs = None
+    try:
+        dirs = os.listdir(NODES_DIR)
+    except:
+        print("ERROR: NODES_DIR ({}) not a directory".format(NODES_DIR))
     for node_id_str in dirs:
         node_id = int(node_id_str)
 
@@ -37,21 +41,12 @@ def main():
         payments[node_id]['num_channels'] = len(channels_json['channels'])
 
         # count routed payments
-        routed_output = cmd("wc -l {}".format(NODE_DIR + node_id_str + '/payments_routed.txt'))
-        print(routed_output)
-
-
-        line = f.readline()
-        while line:
-            payments[node_id]['num_routed'] += 1
-
-            line = f.readline()
+        routed_output = cmd("wc -l {}".format(NODES_DIR + node_id_str + '/payments_routed.txt'))
+        payments[node_id]['num_routed'] = int(str(routed_output).split(' ')[0].split('\'')[1])
 
         print("Node " + node_id_str + ': ' + str(payments[node_id]))
-        f.close()
 
     return
-
 
 def cmd(command):
     process = subprocess.Popen(command.split(), stdout=subprocess.PIPE);

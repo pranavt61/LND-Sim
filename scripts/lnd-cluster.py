@@ -23,6 +23,10 @@ MAX_NODES = 10
 NODES_DIR = "/home/ubuntu/LND-Sim/nodes"
 BTCD_DIR = "/home/ubuntu/LND-Sim/btcd"
 
+# Log flags
+BTCD_LOG_FLAG = False
+LND_LOG_FLAG = False
+
 # Command for btcd node
 btcd_start_up = """btcd 
     --txindex 
@@ -32,8 +36,6 @@ btcd_start_up = """btcd
     --miningaddr=roF5YRWAjZy5tPB5Nib5kJ76EsXmLue4NK
     --rpcuser=kek 
     --rpcpass=kek
-    --rpcmaxclients=100
-    --rpcmaxwebsockets=100
     """
 
 btcctl_cmd = """btcctl 
@@ -82,7 +84,7 @@ def main():
     
     NUM_NODES = int(sys.argv[1])
     GRAPH_TYPE = sys.argv[2]
-    WALLET_PASS = '00000000'
+    WALLET_PASS = bytes('00000000', 'utf-8')
     MINNING_ADDR = "SY6RbmrfYo2Vg9P9RuTreucM7G1SyVqhhb"
     LOG_FILE_PATH = './log.txt';
 
@@ -91,11 +93,21 @@ def main():
         print("ERROR: invalid graph type -> " + GRAPH_TYPE)
         exit()
 
-    ### Clean dir ###
+    ### Create BTCD dir ###
+    if os.path.exists(BTCD_DIR) == False:
+        os.makedirs(BTCD_DIR)
+
+    ### Create Nodes dir ###
+    if os.path.exists(NODES_DIR) == False:
+        os.makedirs(NODES_DIR)
+
+    ### Clean Nodes dir ###
     dir_list = os.listdir(NODES_DIR)
     for node_id in dir_list:
         node_dir = NODES_DIR + '/' + str(node_id)
         shutil.rmtree(node_dir)
+
+    ### Thread data ###
 
     # btcd thread proc
     btcd = None
@@ -109,23 +121,24 @@ def main():
     # }
     nodes = []
 
-    # start btcd node
+    ### Start Threads ###
+
+    # start btcd thread
     btcd = Process(target=btcd_start_node)
     btcd.start()
 
-    # start lnd nodes
+    # start lnd threads
     for node_id in range(0, NUM_NODES):
         nodes.append({
             "id": node_id,
             "thread": Process(target=ln_start_node, args=(node_id,))
         })
         nodes[node_id]["thread"].start()
-
     time.sleep(1)
-
+    
     os.environ['GRPC_SSL_CIPHER_SUITES'] = 'HIGH+ECDSA'
 
-    # init stubs
+    ### init RPC stubs ###
     for node_id in range(0, NUM_NODES):
         while True:
             try:
@@ -142,13 +155,15 @@ def main():
 
         nodes[node_id]["stub_wal"] = stub_wal
 
-    # Init a node using gRPC
+    ### Init a node ###
     for node_id in range(0, NUM_NODES):
         stub_wal = nodes[node_id]['stub_wal']
 
-        ### Gen Seed ###
+        # Gen Seed
         request = None
         if node_id == 0:
+            # use same seed for first node
+            # keeps minning address constant
             request = ln.GenSeedRequest(seed_entropy=bytes(node_seed))
         else:
             request = ln.GenSeedRequest()
@@ -158,7 +173,7 @@ def main():
         print(bytes(node_seed))
         print(response)
 
-        ### Init Wallet ###
+        # Init Wallet
         request = ln.InitWalletRequest(
             wallet_password=WALLET_PASS,
             cipher_seed_mnemonic=cipher_seed_mnemonic)
@@ -166,13 +181,9 @@ def main():
 
         print(response)
 
+    ### wait for rpc servers to init ###
     for node_id in range(0, NUM_NODES):
-
-        # wait for RPC server
         while True:
-            time.sleep(2)
-            
-            # check for open server
             output = cmd_async(lncli_cmd.format(str(node_id), str(10000 + node_id), "getinfo"))
             try:
                 # if rpc server is active,
@@ -185,7 +196,9 @@ def main():
                 print("======== ERROR: RPC server not active yet ========")
                 print("========             node_id: {}           ========".format(node_id))
 
-        ### New Address ###
+            time.sleep(1)
+
+        # New Address
         output = cmd_async(lncli_cmd.format(str(node_id), str(10000 + node_id), "newaddress np2wkh"))
         nodes[node_id]["addr"] = json.loads(output)["address"]
 
@@ -195,7 +208,7 @@ def main():
     output_node_0_balance = cmd_async(lncli_cmd.format("0", "10000", "walletbalance"))
     print(output_node_0_balance)
 
-    # Mine coinbase
+    # Mine coins
     output_mining = cmd_async(btcctl_cmd.format("generate 200"))
     time.sleep(5)                                                   # Wait for mining
 
@@ -208,10 +221,10 @@ def main():
         print(output_sendcoins)
     
     # Mine transactions
-    output_mining = cmd_async(btcctl_cmd.format("generate 20"))
+    cmd_async(btcctl_cmd.format("generate 100"))
     time.sleep(5)                                                   # Wait for mining
 
-    ### Create Channels ###
+    ### Connect Peers and Create Channels ###
     
     # create graph
     graph = graphs.graph_types[GRAPH_TYPE](NUM_NODES)
@@ -244,7 +257,7 @@ def main():
     output_mining = cmd_async(btcctl_cmd.format("generate 20"))
     time.sleep(5)                                                   # Wait for mining
 
-    ### SEND COINS ###
+    ### Simulate Routing ###
     log_f = open(LOG_FILE_PATH, "w+")
     while True:
         s = -1
@@ -284,17 +297,17 @@ def pay_invoice(sender, receiver, amt, log_file):
 
     if receipt['payment_error'] == '':
         print("Success")
-        print(receipt)
         print("---------------------------------------")
 
         log_file.write("SUCCESS")
+        log_file.write(receipt)
         log_file.write("\n---------------------------------------\n")
     else:
         print("FAILED")
-        print(receipt)
         print("---------------------------------------")
 
         log_file.write("FAILED")
+        log_file.write(receipt)
         log_file.write("\n---------------------------------------\n")
 
 def btcd_start_node():
@@ -303,7 +316,8 @@ def btcd_start_node():
 
     btcd_output = cmd(btcd_cmd)
     for l in btcd_output:
-        #print("BTCD => " + l, end='')
+        if BTCD_LOG_FLAG:
+            print("BTCD => " + l, end='')
         continue
 
 def ln_start_node(node_id):
@@ -313,6 +327,11 @@ def ln_start_node(node_id):
     node_peer = str(20000 + node_id)
     node_rest = str(8000 + node_id)
     node_dir = NODES_DIR + '/' + str(node_id)
+
+    # clear ports
+    cmd_async("fuser -k {}/tcp".format(node_rpc))
+    cmd_async("fuser -k {}/tcp".format(node_peer))
+    cmd_async("fuser -k {}/tcp".format(node_rest))
 
     # delete dir
     dir_list = os.listdir(NODES_DIR)
@@ -333,7 +352,8 @@ def ln_start_node(node_id):
     while True:
         try:
             for l in lnd_output:
-                #print("LND {} => ".format(node_id) + l, end='')
+                if LND_LOG_FLAG:
+                    print("LND {} => ".format(node_id) + l, end='')
 
                 try:
                     # check for routed payments

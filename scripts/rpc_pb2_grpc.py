@@ -280,6 +280,11 @@ class LightningStub(object):
         request_serializer=rpc__pb2.OpenChannelRequest.SerializeToString,
         response_deserializer=rpc__pb2.OpenStatusUpdate.FromString,
         )
+    self.ChannelAcceptor = channel.stream_stream(
+        '/lnrpc.Lightning/ChannelAcceptor',
+        request_serializer=rpc__pb2.ChannelAcceptResponse.SerializeToString,
+        response_deserializer=rpc__pb2.ChannelAcceptRequest.FromString,
+        )
     self.CloseChannel = channel.unary_stream(
         '/lnrpc.Lightning/CloseChannel',
         request_serializer=rpc__pb2.CloseChannelRequest.SerializeToString,
@@ -637,6 +642,18 @@ class LightningServicer(object):
     blocks that the funding transaction should be confirmed in, or a manual fee
     rate to us for the funding transaction. If neither are specified, then a
     lax block confirmation target is used.
+    """
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details('Method not implemented!')
+    raise NotImplementedError('Method not implemented!')
+
+  def ChannelAcceptor(self, request_iterator, context):
+    """*
+    ChannelAcceptor dispatches a bi-directional streaming RPC in which
+    OpenChannel requests are sent to the client and the client responds with
+    a boolean that tells LND whether or not to accept the channel. This allows
+    node operators to specify their own criteria for accepting inbound channels
+    through a single persistent connection.
     """
     context.set_code(grpc.StatusCode.UNIMPLEMENTED)
     context.set_details('Method not implemented!')
@@ -1074,6 +1091,11 @@ def add_LightningServicer_to_server(servicer, server):
           servicer.OpenChannel,
           request_deserializer=rpc__pb2.OpenChannelRequest.FromString,
           response_serializer=rpc__pb2.OpenStatusUpdate.SerializeToString,
+      ),
+      'ChannelAcceptor': grpc.stream_stream_rpc_method_handler(
+          servicer.ChannelAcceptor,
+          request_deserializer=rpc__pb2.ChannelAcceptResponse.FromString,
+          response_serializer=rpc__pb2.ChannelAcceptRequest.SerializeToString,
       ),
       'CloseChannel': grpc.unary_stream_rpc_method_handler(
           servicer.CloseChannel,
