@@ -90,8 +90,8 @@ TOPOLOGY= {
 
 1) open scripts/graphs.py
 
-2) create a function that takes number of nodes as input and an adjacency list as an output
-[adjacency lists](https://en.wikipedia.org/wiki/Adjacency_list)
+2) create a function that takes number of nodes as input and an [adjacency lists](https://en.wikipedia.org/wiki/Adjacency_list) as an output
+
 
 3) add function entry to dictionary at the end of the script
 
