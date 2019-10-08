@@ -17,6 +17,7 @@ import sys
 import re
 
 import graphs
+import routing
 
 NEXT_NODE_ID = 0
 MAX_NODES = 10
@@ -78,19 +79,23 @@ def main():
     if len(sys.argv) < 3:
         # missing num nodes
         print("Usage:")
-        print("     py lnd-cluster.py <NUM_NODES> <GRAPH_TYPE>")
+        print("     py lnd-cluster.py <NUM_NODES> <GRAPH_TYPE> <ROUTING_TYPE>")
         print("     Graph types: tree, central, ring")
+        print("     Routing types: random, merchant")
         exit(1)
     
     NUM_NODES = int(sys.argv[1])
     GRAPH_TYPE = sys.argv[2]
+    ROUTING_TYPE = sys.argv[3]
     WALLET_PASS = bytes('00000000', 'utf-8')
     MINNING_ADDR = "SY6RbmrfYo2Vg9P9RuTreucM7G1SyVqhhb"
-    LOG_FILE_PATH = './log.txt';
 
     ### ARG Checking ###
     if GRAPH_TYPE not in graphs.graph_types:
         print("ERROR: invalid graph type -> " + GRAPH_TYPE)
+        exit()
+    if ROUTING_TYPE not in routing.routing_types:
+        print("ERROR: invalid routing type -> " + ROUTING_TYPE)
         exit()
 
     ### Create BTCD dir ###
@@ -258,57 +263,9 @@ def main():
     time.sleep(5)                                                   # Wait for mining
 
     ### Simulate Routing ###
-    log_f = open(LOG_FILE_PATH, "w+")
-    while True:
-        s = -1
-        r = -1
-        a = 1
+    routing.routing_types[ROUTING_TYPE](NUM_NODES)
 
-        # pick random sender
-        s = int(random.random() * NUM_NODES)
-
-        # pick random receiver
-        r = int(random.random() * NUM_NODES)
-        while r == s:
-            # pick another val
-            r = int(random.random() * NUM_NODES)
-
-        pay_invoice(s, r, 5, log_f)
-
-        time.sleep(.25)
     return
-
-def pay_invoice(sender, receiver, amt, log_file):
-    print(str(sender) + ' paying ' + str(receiver) + ' ' + str(amt) + ' coins' + '...');
-    log_file.write(str(sender) + ' paying ' + str(receiver) + ' ' + str(amt) + ' coins' + '...\n')
-
-    # make invoice
-    add_invoice = lncli_cmd.format(str(receiver), str(10000 + receiver), "addinvoice --amt=" + str(amt))
-    invoice_string = cmd_async(add_invoice);
-    log_file.write(add_invoice + '\n')
-
-    invoice = json.loads(invoice_string);
-
-    # pay invoice
-    pay = lncli_cmd.format(str(sender), str(10000 + sender), "sendpayment -f --pay_req=" + invoice['pay_req'])
-    receipt = cmd_async(pay)
-    receipt = json.loads(receipt)
-    log_file.write(pay + '\n')
-
-    if receipt['payment_error'] == '':
-        print("Success")
-        print("---------------------------------------")
-
-        log_file.write("SUCCESS")
-        log_file.write(receipt)
-        log_file.write("\n---------------------------------------\n")
-    else:
-        print("FAILED")
-        print("---------------------------------------")
-
-        log_file.write("FAILED")
-        log_file.write(receipt)
-        log_file.write("\n---------------------------------------\n")
 
 def btcd_start_node():
     print("START BTCD")
