@@ -58,7 +58,7 @@ git pull https://github.com/pranavt61/LND-Sim.git
 Run lnd-cluster.py script:
 ```
 cd LND-Sim
-python3 lnd-cluster.py <NUM_NODES> <TOPOLOGY>
+python3 lnd-cluster.py <NUM_NODES> <TOPOLOGY> <ROUTING>
 ```
 
 Number of nodes:
@@ -75,6 +75,14 @@ TOPOLOGY= {
 }
 ```
 
+Routing:
+```
+TOPOLOGY= {
+  random,
+  merchant
+}
+```
+
 ###Custom topologies:
 
 1) open scripts/graphs.py
@@ -86,5 +94,18 @@ TOPOLOGY= {
 
 4) launch the script 
 ```
-python3 lnd-cluster.py <NUM_NODES> <MY CUSTOM TOPOLOGY>
+python3 lnd-cluster.py <NUM_NODES> <MY CUSTOM TOPOLOGY> <ROUTING>
+```
+
+###Custom routing:
+
+1) open scripts/routing.py
+
+2) create a function that takes number of nodes as input and creates invoices using the pay_invoice() function
+
+3) add function entry to dictionary at the end of the script
+
+4) launch the script 
+```
+python3 lnd-cluster.py <NUM_NODES> <TOPOLOGY> <MY CUSTOM ROUTING>
 ```
