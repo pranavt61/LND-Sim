@@ -85,7 +85,8 @@ TOPOLOGY= {
 }
 ```
 
-###Custom topologies:
+## Customize your network
+### Custom topologies:
 
 1) open scripts/graphs.py
 
@@ -99,7 +100,7 @@ TOPOLOGY= {
 python3 lnd-cluster.py <NUM_NODES> <MY CUSTOM TOPOLOGY> <ROUTING>
 ```
 
-###Custom routing:
+### Custom routing:
 
 1) open scripts/routing.py
 
