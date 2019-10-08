@@ -2,6 +2,8 @@
 
 Script to automate and monitor an LND cluster. Allows for custamizable topologies.
 
+![alt text](https://raw.githubusercontent.com/pranavt61/LND-Sim/master/README.png)
+
 ## Getting Started
 
 ### Prerequisites
